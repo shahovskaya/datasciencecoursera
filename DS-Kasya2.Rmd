@@ -1,0 +1,194 @@
+---
+title: "Data Science: reproducible research course work"
+author: "Kasya Shahovskaya"
+date: "10/12/2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Storms analysis impact in USA
+
+### Synopsis: 
+Storms and other events can cause both public health and economic problems for communities and municipalities. Many events may lead to the injuries and even people death. The Dataset contains not clean data, so it was preliminary cleaned up. Economic harm was measured by property and crop damage. The findings of the analysis show that most harmful (in terms of economic impact) event is FLOOD. It is followed by HURRICANE and TORNADO.TORNADO, FLOOD AND ICE STORM injured most. And TORNADO AND FLASH FLOOD kiled most.
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm [database](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2). This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.There is also some [documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf) of the database available.
+
+______
+Ps.You can download Data in R via automatic, but unziping on Mac caused lost in data headings
+on my computer in 1 case out of 3, so I recommend to process download and unzip manually. 
+But you can use that code for mashine processing:
+```
+url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+download.file(url,destfile='./stormdata.csv.bz2',method='curl') 
+file <- bzfile(description = './stormdata.csv.bz2', open = 'r', encoding = getOption('encoding'), compression =9)
+```
+## DATA PROCESSING AND CLEANING
+
+```{r}
+ DATA<- read.csv("StormData.csv", sep=",", header=TRUE, stringsAsFactors=FALSE, quote = "")
+```
+
+Making small test table to see the data:
+```{r} 
+head(DATA, n=5)
+```
+```{r} 
+dim(DATA)
+```
+Data is huge, let's extract only needed columns to reduce size of the data and remove large data frame:
+
+```{r}
+storm_data <- DATA[,c("X.BGN_DATE.", "X.STATE.", "X.EVTYPE.", "X.FATALITIES.", "X.INJURIES.", "X.PROPDMG.", "X.PROPDMGEXP.", "X.CROPDMG.", "X.CROPDMGEXP.", "X.REFNUM.")]
+rm("DATA")
+```
+
+As we see, data is not clean.
+
+```{r} 
+head(storm_data, n=5)
+```
+Lets rename columns in more comfortable for viewing names:
+```{r}
+library(data.table)
+setnames(storm_data, old=c("X.BGN_DATE.","X.STATE.","X.EVTYPE.","X.FATALITIES.","X.INJURIES.","X.PROPDMG.","X.PROPDMGEXP.","X.CROPDMG.","X.CROPDMGEXP.","X.REFNUM."), new=c("date", "state","eType","fat","inj","propDmg","propDmgExp","cropDmg","cropDmgExp","refNum"))
+head(storm_data, n=5)
+```
+Let's split the date column and separate time out of it and delete new time column:
+
+```{r}
+library(tidyr)
+storm_data <- separate(storm_data, date, c("Date","time"), sep = " ", remove = TRUE)
+storm_data$time <- NULL
+```
+Cleaning Date field:
+```{r}
+library(plyr)
+storm_data <- mutate(storm_data, Date=as.Date(Date,"%m/%d/%Y"))
+head(storm_data, n=5)
+```
+Date column has many NAs. Let's remove events which we can't identify by date:
+
+```{r}
+delete.na <- storm_data[!is.na(storm_data$Date),]
+head(delete.na, n=5)
+```
+
+Making data numeric -> subsetting only if harm occured.
+```{r}
+delete.na$fat <- as.numeric(delete.na$fat)   
+delete.na$inj <- as.numeric(delete.na$inj)   
+delete.na$propDmg <- as.numeric(delete.na$propDmg)   
+delete.na$cropDmg <- as.numeric(delete.na$cropDmg)
+sub_delete.na <- subset(delete.na, fat > 0 | inj > 0 | propDmg > 0 | cropDmg > 0)
+dim(sub_delete.na)
+```
+
+Let's sure that event accociated data columns (eType, propDmgExp) are clean.
+Firstly, lets check eType column. There are 525 different values for this events. 
+They seems all different and right:
+```{r}
+unique(sub_delete.na$eType)
+```
+
+Let's look on propDmgExp: 
+```{r}
+unique(sub_delete.na$propDmgExp)
+```
+It has 24 meanngs while should have four: " " - for nothing; "K" - for '000; "M" - for '000.000; "B" - for '000.000.000.
+Let's subset numeric values for "K" "M" ect, also, removing all quotation marks in the data and for all unknown fields make NAs:
+```{r}
+newdata <-sub_delete.na
+library(stringr)
+library(plyr)
+del <- colwise(function(newdata) str_replace_all(newdata, '\"', ""))
+newdata <- del(newdata)
+
+newdata$propDmgExp <- gsub("K", "1000", newdata$propDmgExp)
+newdata$propDmgExp <- gsub("M", "1000000", newdata$propDmgExp)
+newdata$propDmgExp <- gsub("B", "1000000000", newdata$propDmgExp)
+newdata$propDmgExp <- gsub("m", "1000000", newdata$propDmgExp)
+newdata$propDmgExp <- as.numeric(newdata$propDmgExp) 
+newdata <- newdata[!is.na(newdata$propDmgExp),]
+unique(newdata$propDmgExp)
+```
+Clear and numeric, no NAs. 
+
+Let's look on cropDmgExp: 
+```{r}
+unique(sub_delete.na$propDmgExp)
+```
+Same problem, same solution:
+
+```{r}
+newdata$cropDmgExp <- gsub("K", "1000", newdata$cropDmgExp)
+newdata$cropDmgExp <- gsub("M", "1000000", newdata$cropDmgExp)
+newdata$cropDmgExp <- gsub("B", "1000000000", newdata$cropDmgExp)
+newdata$cropDmgExp <- gsub("m", "1000000", newdata$cropDmgExp)
+newdata$cropDmgExp <- as.numeric(newdata$cropDmgExp) 
+newdata <- newdata[!is.na(newdata$cropDmgExp),]
+newdata$cropDmg <- as.numeric(newdata$cropDmg)
+newdata$propDmg <- as.numeric(newdata$propDmg)
+unique(newdata$cropDmgExp)
+rm("sub_delete.na")
+rm("storm_data")
+
+```
+
+Data is clean
+_______________
+
+##RESEARCH RESULTS: Most harmful types of events?
+
+Let's multyply property and crops damages events by its values. I will make new fields for this:
+
+```{r}
+newdata$cropTotal <- newdata$cropDmg * newdata$cropDmgExp
+newdata$propTotal <- newdata$propDmg * newdata$propDmgExp
+```
+Let's summ total economic harm of both property and crops
+```{r}
+newdata$TotalHarm <- newdata$cropTotal + newdata$propTotal
+```
+Let's find 5 most harmful events:
+
+```{r}
+ newdataharm <- aggregate(TotalHarm ~ eType, newdata, sum)
+ newdataharm <- newdataharm[order(newdataharm$TotalHarm , decreasing = TRUE),][1:4, ] 
+```
+Now let's find out which events was fatal and which injured most people.
+```{r}
+ newdata$fat <- as.numeric(newdata$fat)
+ newdata$inj <- as.numeric(newdata$inj)
+ fatalHarm <- aggregate(fat ~ eType, newdata, sum)
+ injuryHarm <- aggregate(inj ~ eType, newdata, sum)
+ fatalHarm <- fatalHarm[order(fatalHarm$fat, decreasing = TRUE),][1:4, ] 
+ injuryHarm <- injuryHarm[order(injuryHarm$inj, decreasing = TRUE),][1:4, ] 
+```
+
+## DATA PLOS
+
+```{r}
+library(ggplot2)
+plot1 <- ggplot(newdataharm, aes(eType, TotalHarm)) 
+plot1 <- plot1 + geom_bar(aes(fill=eType), stat="identity")
+plot1 <- plot1 + labs(x="Type of the Event", y="Population Damage", title="Most Harmful Events")
+plot1 <- plot1 + theme(plot.title = element_text(lineheight=.9, face="bold"),
+               axis.text.x=element_text(angle=30,vjust=1,hjust=1))
+print(plot1)
+
+plot2 <- ggplot(fatalHarm, aes(eType, fat)) 
+plot2 <- plot2 + geom_bar(aes(fill=eType), stat="identity")
+plot2 <- plot2 + labs(x="Type of the Event", y="Fatalities", title="Most fatal events")
+plot2 <- plot2 + theme(plot.title = element_text(lineheight=.9, face="bold"),
+               axis.text.x=element_text(angle=30,vjust=1,hjust=1))
+print(plot2)
+
+plot3 <- ggplot(injuryHarm, aes(eType, inj)) 
+plot3 <- plot3 + geom_bar(aes(fill=eType), stat="identity")
+plot3 <- plot3 + labs(x="Type of the Event", y="Injuries", title="Most injurable events")
+plot3 <- plot3 + theme(plot.title = element_text(lineheight=.9, face="bold"),
+               axis.text.x=element_text(angle=30,vjust=1,hjust=1))
+print(plot3)
+```
